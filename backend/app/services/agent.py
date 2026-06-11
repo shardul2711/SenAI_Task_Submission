@@ -134,9 +134,13 @@ class AutonomousAgent:
             f"- If customer asks about pro-rata upgrades or nonprofit discounts, calculate standard 30% discount on standard tier and explain mid-cycle pro-rata pricing."
         )
         
+        from app.config import settings
+        key = settings.OPENAI_API_KEY.strip() if settings.OPENAI_API_KEY else ""
+        model_name = "llama-3.3-70b-versatile" if key.startswith("gsk_") else "gpt-4o"
+        
         try:
             response = openai_client.chat.completions.create(
-                model="gpt-4o",
+                model=model_name,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": email_body}

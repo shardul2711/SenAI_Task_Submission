@@ -19,25 +19,54 @@ class RAGService:
         if not self.openai_client:
             key = settings.OPENAI_API_KEY.strip() if settings.OPENAI_API_KEY else ""
             if key and key not in ("YOUR_OPENAI_API_KEY", "your_openai_key", "") and not key.startswith("YOUR_") and not key.startswith("your_"):
-                self.openai_client = OpenAI(api_key=key)
+                if key.startswith("gsk_"):
+                    self.openai_client = OpenAI(api_key=key, base_url="https://api.groq.com/openai/v1")
+                else:
+                    self.openai_client = OpenAI(api_key=key)
         return self.openai_client
 
     def get_embedding(self, text: str) -> list:
-        client = self.get_openai_client()
-        if not client:
-            # Fallback if no API key is present for offline/dry-run/testing modes
-            # Return dummy vector of 1536 dims
-            return [0.0] * 1536
+        key = settings.OPENAI_API_KEY.strip() if settings.OPENAI_API_KEY else ""
+        if key.startswith("gsk_") or not self.get_openai_client():
+            # Groq does not support embeddings; generate deterministic Random Indexing vectors locally
+            import hashlib
+            import numpy as np
+            dim = 1536
+            words = re.findall(r'\b\w+\b', text.lower())
+            if not words:
+                return [0.0] * dim
+            vec = np.zeros(dim)
+            for word in words:
+                seed = int(hashlib.md5(word.encode('utf-8')).hexdigest(), 16) % (2**32)
+                vec += np.random.RandomState(seed).randn(dim)
+            norm = np.linalg.norm(vec)
+            if norm > 0:
+                vec = vec / norm
+            return vec.tolist()
         
         try:
+            client = self.get_openai_client()
             response = client.embeddings.create(
                 input=[text.replace("\n", " ")],
                 model="text-embedding-3-small"
             )
             return response.data[0].embedding
         except Exception as e:
-            print(f"OpenAI embedding generation failed: {e}. Falling back to zero vectors.")
-            return [0.0] * 1536
+            print(f"OpenAI embedding generation failed: {e}. Falling back to local Random Indexing.")
+            import hashlib
+            import numpy as np
+            dim = 1536
+            words = re.findall(r'\b\w+\b', text.lower())
+            if not words:
+                return [0.0] * dim
+            vec = np.zeros(dim)
+            for word in words:
+                seed = int(hashlib.md5(word.encode('utf-8')).hexdigest(), 16) % (2**32)
+                vec += np.random.RandomState(seed).randn(dim)
+            norm = np.linalg.norm(vec)
+            if norm > 0:
+                vec = vec / norm
+            return vec.tolist()
 
     def chunk_text(self, text: str, chunk_size: int = 1500, overlap: int = 200) -> list:
         """

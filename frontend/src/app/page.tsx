@@ -44,6 +44,11 @@ export default function CRMPlatform() {
   const [inboxFilter, setInboxFilter] = useState<"all" | "human" | "replied" | "escalated" | "spam">("all");
   const [searchQuery, setSearchQuery] = useState("");
   
+  // Active Contact selection
+  const [activeContactEmail, setActiveContactEmail] = useState("alice.smith@greenlight-npo.org");
+  const activeContactEmailRef = useRef("alice.smith@greenlight-npo.org");
+  const selectedThreadRef = useRef<any>(null);
+
   // Active email & proposed action
   const [activeEmail, setActiveEmail] = useState<any>(null);
   const [draftContent, setDraftContent] = useState("");
@@ -128,17 +133,13 @@ export default function CRMPlatform() {
         if (msg.type === "email_ingested") {
           addNotification(`New email ingested from ${msg.data.sender} (Thread: ${msg.data.thread_id})`);
           fetchStats();
-          // Reload current contact threads if active
-          if (selectedThread && selectedThread.sender_email === msg.data.sender) {
-            fetchThreads(msg.data.sender);
-          } else {
-            fetchThreads("alice.smith@greenlight-npo.org");
-          }
+          // Reload threads of currently active contact
+          fetchThreads(activeContactEmailRef.current);
         } else if (msg.type === "draft_approved") {
           addNotification(`Reply draft approved for Email ID: ${msg.data.email_id}`);
           fetchStats();
-          if (selectedThread) {
-            fetchThreads(selectedThread.sender_email);
+          if (selectedThreadRef.current) {
+            fetchThreads(selectedThreadRef.current.sender_email);
           }
         }
       };
@@ -198,6 +199,7 @@ export default function CRMPlatform() {
     localStorage.removeItem("crm_token");
     setToken(null);
     setSelectedThread(null);
+    selectedThreadRef.current = null;
     setActiveEmail(null);
   };
 
@@ -223,9 +225,12 @@ export default function CRMPlatform() {
       if (res.ok) {
         const data = await res.json();
         setThreads(data);
+        setActiveContactEmail(email);
+        activeContactEmailRef.current = email;
         // Re-select thread if it was already selected
-        if (selectedThread) {
-          const updated = data.find((t: any) => t.thread_id === selectedThread.thread_id);
+        const currentSelected = selectedThreadRef.current;
+        if (currentSelected) {
+          const updated = data.find((t: any) => t.thread_id === currentSelected.thread_id);
           if (updated) handleSelectThread(updated);
         }
       }
@@ -251,6 +256,7 @@ export default function CRMPlatform() {
 
   const handleSelectThread = (thread: any) => {
     setSelectedThread(thread);
+    selectedThreadRef.current = thread;
     // Set most recent email as active
     if (thread.emails && thread.emails.length > 0) {
       const lastEmail = thread.emails[thread.emails.length - 1];
@@ -539,6 +545,30 @@ export default function CRMPlatform() {
               <BarChart2 className="w-5 h-5" />
               <span>Realtime Analytics</span>
             </button>
+          </div>
+
+          {/* Active Contact Switcher */}
+          <div className="bg-slate-900/60 border border-slate-800/80 p-4 rounded-2xl flex flex-col gap-3">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Contact</h3>
+            <select
+              value={activeContactEmail}
+              onChange={(e) => {
+                const email = e.target.value;
+                fetchThreads(email);
+              }}
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-300 focus:outline-none focus:border-violet-500 transition-colors cursor-pointer"
+            >
+              <option value="alice.smith@greenlight-npo.org">Alice Smith (Standard)</option>
+              <option value="bob.jones@enterprise.net">Bob Jones (VIP / SLA Threat)</option>
+              <option value="karen.w@retail-co.com">Karen W. (Pro / Churn Threat)</option>
+              <option value="marcus.del@fintech-startup.co">Marcus Del (GDPR Request)</option>
+              <option value="charlie@fastlane-startup.com">Charlie</option>
+              <option value="eleanor.voss@healthcare-group.org">Eleanor Voss</option>
+              <option value="nadia.k@global-logistics.com">Nadia K. (VIP)</option>
+              <option value="user.confused@hotmail.com">Confused User</option>
+              <option value="student@mit.edu">MIT Student</option>
+              <option value="angry.user@domain.com">Angry User (High Risk)</option>
+            </select>
           </div>
 
           {/* Quick Simulation Trigger block */}

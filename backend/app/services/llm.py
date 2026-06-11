@@ -26,6 +26,8 @@ class LLMClassificationResult(BaseModel):
 def get_openai_client() -> Optional[OpenAI]:
     key = settings.OPENAI_API_KEY.strip() if settings.OPENAI_API_KEY else ""
     if key and key not in ("YOUR_OPENAI_API_KEY", "your_openai_key", "") and not key.startswith("YOUR_") and not key.startswith("your_"):
+        if key.startswith("gsk_"):
+            return OpenAI(api_key=key, base_url="https://api.groq.com/openai/v1")
         return OpenAI(api_key=key)
     return None
 
@@ -51,6 +53,23 @@ def analyze_with_llm(email_body: str, thread_history: List[dict] = None, rag_chu
     system_prompt = (
         "You are an AI CRM Operations Analyst. Analyze the incoming email, its thread history, and the relevant policy context to classify it and suggest actions.\n"
         "You must output a structured JSON response matching the schema.\n"
+        "The JSON object must contain these fields exactly:\n"
+        "  - category: str (Complaint|Inquiry|Bug Report|Feature Request|Compliance|Legal|Billing|Spam|Internal|Other)\n"
+        "  - sentiment: str (Positive|Neutral|Negative|Mixed)\n"
+        "  - sentiment_score: float (-1.0 to 1.0)\n"
+        "  - urgency: str (Critical|High|Medium|Low)\n"
+        "  - requires_human: bool\n"
+        "  - escalation_reason: str or null\n"
+        "  - suggested_reply: str or null\n"
+        "  - confidence: float\n"
+        "  - detected_entities: object containing:\n"
+        "      - order_ids: list of str\n"
+        "      - ticket_ids: list of str\n"
+        "      - monetary_amounts: list of str\n"
+        "      - deadlines: list of str\n"
+        "      - products_mentioned: list of str\n"
+        "      - companies: list of str\n"
+        "      - people: list of str\n"
         "Confidence rules: If the input email is conflicting, ambiguous, or the policies are unclear, set confidence below 0.70.\n"
         "Cite policies if a reply is suggested. If requires_human is true, provide an escalation_reason."
     )
@@ -61,17 +80,34 @@ def analyze_with_llm(email_body: str, thread_history: List[dict] = None, rag_chu
         f"--- RAG POLICY CONTEXT ---\n{rag_text or 'No RAG context available'}\n"
     )
 
+    key = settings.OPENAI_API_KEY.strip() if settings.OPENAI_API_KEY else ""
+    is_groq = key.startswith("gsk_")
+    model_name = "llama-3.3-70b-versatile" if is_groq else "gpt-4o"
+
     try:
-        completion = client.beta.chat.completions.parse(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            response_format=LLMClassificationResult,
-            temperature=0.1
-        )
-        result = completion.choices[0].message.parsed
+        if is_groq:
+            completion = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1
+            )
+            raw_content = completion.choices[0].message.content
+            result = LLMClassificationResult.model_validate_json(raw_content)
+        else:
+            completion = client.beta.chat.completions.parse(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                response_format=LLMClassificationResult,
+                temperature=0.1
+            )
+            result = completion.choices[0].message.parsed
         
         # Rule: Confidence < 0.70 automatically forces requires_human = True
         if result.confidence < 0.70:
@@ -81,7 +117,7 @@ def analyze_with_llm(email_body: str, thread_history: List[dict] = None, rag_chu
                 
         return result
     except Exception as e:
-        print(f"Error calling OpenAI API for classification: {e}")
+        print(f"Error calling LLM API ({model_name}) for classification: {e}")
         return get_mock_llm_result(email_body, message_id)
 
 def get_mock_llm_result(email_body: str, message_id: str = None) -> LLMClassificationResult:
