@@ -170,3 +170,112 @@ A state-driven loop (max 6 steps) utilizing 10 tools to process customer emails.
 1. **Lightweight Vector Store**: Due to missing C++ compiler suites (MSVC) on target Windows platforms, installing native ChromaDB failed. We implemented `LocalVectorStore` using pure Python and NumPy to compute L2 distances and cosine similarity. This keeps the RAG pipeline **100% portable** and fast (<1ms search time for policy datasets).
 2. **In-Memory SQLite for Tests**: API and integration tests are backed by SQLite in-memory, meaning tests run instantly without writing side-effects to the active MySQL operational database.
 3. **Structured Fallbacks**: If the OpenAI API key is placeholder or missing, the system automatically falls back to deterministic mock generators matching the assessment dataset. This allows full offline verification of all 5 special scenarios (GDPR, Bob, Karen, Alice, Ransomware).
+
+
+Architecture & Technology Decisions
+1. FastAPI for Backend
+
+FastAPI was selected because it provides high performance, automatic OpenAPI/Swagger documentation, type validation through Pydantic, and seamless integration with AI/ML workflows. The asynchronous support also allows efficient handling of email ingestion and AI processing tasks.
+
+Benefits:
+
+Fast development speed
+Automatic API documentation
+Strong type safety
+High performance for concurrent requests
+2. MySQL as Primary Database
+
+MySQL was chosen as the primary relational database because it offers reliability, strong transactional support, indexing capabilities, and easy integration with SQLAlchemy. It is also widely used in production environments and can be managed through MySQL Workbench.
+
+Benefits:
+
+Structured storage for emails, threads, contacts, and actions
+ACID compliance
+Efficient querying and indexing
+Easy administration using MySQL Workbench
+3. ChromaDB for Vector Storage
+
+A vector database was required for Retrieval-Augmented Generation (RAG). ChromaDB was selected because it is lightweight, open-source, easy to integrate with Python, and suitable for storing embeddings generated from policy documents.
+
+Benefits:
+
+Fast similarity search
+Lightweight deployment
+Easy integration with LangChain/LangGraph
+Suitable for local development and assessment projects
+4. LangGraph for Agent Orchestration
+
+LangGraph was selected instead of simple prompt chaining because the assessment requires multi-step reasoning, tool execution, escalation workflows, and decision-making. LangGraph enables stateful agent execution and structured workflows.
+
+Benefits:
+
+Multi-step reasoning
+Tool calling support
+State management
+Better visibility into agent decisions
+5. RAG-Based Knowledge Retrieval
+
+Instead of embedding company policies directly into prompts, a RAG architecture was implemented. This allows the agent to retrieve relevant policy information dynamically, improving accuracy and reducing hallucinations.
+
+Benefits:
+
+More accurate responses
+Source-grounded answers
+Easier knowledge base updates
+Scalable architecture
+6. Layered Architecture
+
+The application follows a layered architecture separating presentation, business logic, AI services, and data persistence.
+
+Benefits:
+
+Better maintainability
+Easier testing
+Improved scalability
+Clear separation of responsibilities
+7. Next.js for Frontend
+
+Next.js was chosen because it provides a modern React-based framework with excellent performance, routing, and developer experience. It enables building a responsive dashboard suitable for monitoring emails and agent activities.
+
+Benefits:
+
+Fast rendering
+Component reusability
+TypeScript support
+Enterprise-grade UI development
+8. WebSocket for Real-Time Updates
+
+Email processing is event-driven and requires real-time visibility. WebSockets were used to push updates to the dashboard whenever new emails are ingested or agent actions are completed.
+
+Benefits:
+
+Real-time monitoring
+Better user experience
+Reduced polling overhead
+9. Hybrid AI Decision Pipeline
+
+A hybrid pipeline combining heuristic rules and LLM-based reasoning was implemented.
+
+The workflow is:
+
+Email → Heuristic Analysis → RAG Retrieval → LLM Classification → LangGraph Agent → Action
+
+Why this approach?
+
+Using heuristics for spam, security threats, and urgency detection reduces cost and latency, while LLM reasoning handles complex contextual decisions.
+
+Benefits:
+
+Lower AI costs
+Faster processing
+Improved reliability
+Reduced hallucinations
+10. Human-in-the-Loop Approval Workflow
+
+Critical actions such as legal escalations, compliance responses, and customer retention decisions require human review before execution.
+
+Benefits:
+
+Improved trust
+Regulatory compliance
+Reduced risk of incorrect automated actions
